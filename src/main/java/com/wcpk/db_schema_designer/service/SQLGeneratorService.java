@@ -37,15 +37,19 @@ public class SQLGeneratorService {
                     case "many-to-many":
                         sqlScript.append(generateManyToManySQL(relationship, tableNameMap)).append("\n");
                         break;
+                    case "inheritance":
+                        sqlScript.append(generateInheritanceSQL(relationship, tableNameMap)).append("\n");
+                        break;
                 }
             }
 
              clearDatabase();
              executeSQLScript(sqlScript.toString());
+             clearDatabase();
 
             return "" + sqlScript;
         } catch (Exception e) {
-            return "Błąd podczas wykonywania skryptu:\n" + e.getMessage();
+            return "Error while executing script:\n" + e.getMessage();
         }
     }
 
@@ -82,11 +86,12 @@ public class SQLGeneratorService {
     private String generateOneToOneSQL(SchemaRequest.Relationship rel, Map<String, SchemaRequest.Table> tableNameMap) {
         String pkSource = getPrimaryKeyColumn(rel.getSourceTableName(), tableNameMap);
         String pkType = getPrimaryKeyType(rel.getSourceTableName(), tableNameMap);
+        String fkName = rel.getSourceTableName() + "_" + pkSource;
 
         return "ALTER TABLE " + rel.getTargetTableName() + " ADD COLUMN " +
-                pkSource + " " + pkType + " UNIQUE,\n" +
+                fkName + " " + pkType + " UNIQUE,\n" +
                 "ADD CONSTRAINT fk_" + rel.getTargetTableName() + "_" + rel.getSourceTableName() +
-                " FOREIGN KEY (" + pkSource + ") REFERENCES " + rel.getSourceTableName() + "(" + pkSource + ");\n";
+                " FOREIGN KEY (" + fkName + ") REFERENCES " + rel.getSourceTableName() + "(" + pkSource + ");\n";
     }
 
     private String generateOneToManySQL(SchemaRequest.Relationship rel, Map<String, SchemaRequest.Table> tableNameMap) {
@@ -103,11 +108,12 @@ public class SQLGeneratorService {
 
         String pkOne = getPrimaryKeyColumn(oneTable, tableNameMap);
         String pkType = getPrimaryKeyType(oneTable, tableNameMap);
+        String fkName = oneTable + "_" + pkOne;
 
         return "ALTER TABLE " + manyTable + " ADD COLUMN " +
-                pkOne + " " + pkType + ",\n" +
+                fkName + " " + pkType + ",\n" +
                 "ADD CONSTRAINT fk_" + manyTable + "_" + oneTable +
-                " FOREIGN KEY (" + pkOne + ") REFERENCES " + oneTable + "(" + pkOne + ");\n";
+                " FOREIGN KEY (" + fkName + ") REFERENCES " + oneTable + "(" + pkOne + ");\n";
     }
 
     private String generateManyToManySQL(SchemaRequest.Relationship rel, Map<String, SchemaRequest.Table> tableNameMap) {
@@ -117,14 +123,31 @@ public class SQLGeneratorService {
         String pkTarget = getPrimaryKeyColumn(rel.getTargetTableName(), tableNameMap);
         String pkTargetType = getPrimaryKeyType(rel.getTargetTableName(), tableNameMap);
 
+        String fkSourceColumn = rel.getSourceTableName() + "_" + pkSource;
+        String fkTargetColumn = rel.getTargetTableName() + "_" + pkTarget;
+
         return "CREATE TABLE " + intermediateTable + " (\n" +
-                "    " + pkSource + " " + pkSourceType + " NOT NULL,\n" +
-                "    " + pkTarget + " " + pkTargetType + " NOT NULL,\n" +
-                "    PRIMARY KEY (" + pkSource + ", " + pkTarget + "),\n" +
-                "    FOREIGN KEY (" + pkSource + ") REFERENCES " + rel.getSourceTableName() + "(" + pkSource + "),\n" +
-                "    FOREIGN KEY (" + pkTarget + ") REFERENCES " + rel.getTargetTableName() + "(" + pkTarget + ")\n" +
+                "    " + fkSourceColumn + " " + pkSourceType + " NOT NULL,\n" +
+                "    " + fkTargetColumn + " " + pkTargetType + " NOT NULL,\n" +
+                "    PRIMARY KEY (" + fkSourceColumn + ", " + fkTargetColumn + "),\n" +
+                "    FOREIGN KEY (" + fkSourceColumn + ") REFERENCES " + rel.getSourceTableName() + "(" + pkSource + "),\n" +
+                "    FOREIGN KEY (" + fkTargetColumn + ") REFERENCES " + rel.getTargetTableName() + "(" + pkTarget + ")\n" +
                 ");\n";
     }
+
+    private String generateInheritanceSQL(SchemaRequest.Relationship rel, Map<String, SchemaRequest.Table> tableNameMap) {
+        String parentTable = rel.getSourceTableName();
+        String childTable = rel.getTargetTableName();
+
+        String pkParent = getPrimaryKeyColumn(parentTable, tableNameMap);
+        String pkType = getPrimaryKeyType(parentTable, tableNameMap);
+
+        String pkChild = getPrimaryKeyColumn(childTable, tableNameMap);
+
+        return "ALTER TABLE " + childTable + " ADD CONSTRAINT fk_" + childTable + "_" + parentTable +
+                " FOREIGN KEY (" + pkChild + ") REFERENCES " + parentTable + "(" + pkParent + ");\n";
+    }
+
 
     private String getPrimaryKeyColumn(String tableName, Map<String, SchemaRequest.Table> tableNameMap) {
         SchemaRequest.Table table = tableNameMap.get(tableName);
@@ -135,7 +158,7 @@ public class SQLGeneratorService {
                 }
             }
         }
-        throw new RuntimeException("Nie znaleziono klucza głównego dla tabeli " + tableName);
+        throw new RuntimeException("Primary key not found for table " + tableName);
     }
 
     private String getPrimaryKeyType(String tableName, Map<String, SchemaRequest.Table> tableNameMap) {
@@ -147,7 +170,7 @@ public class SQLGeneratorService {
                 }
             }
         }
-        throw new RuntimeException("Nie znaleziono typu klucza głównego dla tabeli " + tableName);
+        throw new RuntimeException("Primary key type not found for table " + tableName);
     }
 
     private void executeSQLScript(String sqlScript) {
