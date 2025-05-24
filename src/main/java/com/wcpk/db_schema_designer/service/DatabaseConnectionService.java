@@ -2,6 +2,8 @@ package com.wcpk.db_schema_designer.service;
 
 import com.wcpk.db_schema_designer.dto.DatabaseConnectionRequest;
 import com.wcpk.db_schema_designer.dto.DatabaseUploadRequest;
+import com.wcpk.db_schema_designer.model.Column;
+import com.wcpk.db_schema_designer.model.Table;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -9,7 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.dao.DataAccessException;
 
 import javax.sql.DataSource;
-import java.sql.SQLException;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +37,40 @@ public class DatabaseConnectionService {
             }
         } catch (Exception e) {
             return "Unexpected error: " + e.getMessage();
+        }
+    }
+
+    public List<Table> getTablesData(DatabaseConnectionRequest dcr)
+    {
+        List<Table> tablesList = new ArrayList<>();
+        String url = "jdbc:postgresql://" + dcr.getHost() +":" + dcr.getPort() + "/" + dcr.getDatabaseName();
+        try {
+            Connection connection = DriverManager.getConnection(url,dcr.getUsername(),dcr.getPassword());
+            DatabaseMetaData metaData = connection.getMetaData();
+            ResultSet tables = metaData.getTables(null,null,"%",new String[]{"TABLE"});
+
+            while (tables.next())
+            {
+                String tableName = tables.getString("TABLE_NAME");
+                Table table = new Table(tableName);
+                ResultSet columns = metaData.getColumns(null, null, tableName, "%");
+
+                while (columns.next())
+                {
+                    String columnName = columns.getString("COLUMN_NAME");
+                    String dataType = columns.getString("TYPE_NAME");
+                    Column column = new Column(columnName, dataType);
+                    table.addColumn(column);
+                }
+
+                columns.close();
+                tablesList.add(table);
+            }
+            tables.close();
+            return tablesList;
+        }
+        catch (SQLException e) {
+            throw new RuntimeException(e);
         }
     }
 
