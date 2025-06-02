@@ -1,12 +1,11 @@
 package com.wcpk.db_schema_designer.controllers;
 
-import com.wcpk.db_schema_designer.dto.DatabaseConnectionRequest;
-import com.wcpk.db_schema_designer.dto.DatabaseUploadRequest;
-import com.wcpk.db_schema_designer.dto.TablesResponse;
+import com.wcpk.db_schema_designer.dto.*;
 import com.wcpk.db_schema_designer.model.Table;
 import com.wcpk.db_schema_designer.service.DatabaseConnectionService;
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,6 +34,17 @@ public class DatabaseConnectionController {
     {
         List<Table> tables = databaseConnectionService.getTablesData(databaseConnectionRequest);
         return ResponseEntity.ok(new TablesResponse(tables));
+    }
+
+    @PostMapping("/execute-code")
+    public ResponseEntity<ExecuteCodeResponse> executeSqlCode(@RequestBody ExecuteCodeRequest request) {
+        ExecuteCodeResponse response = databaseConnectionService.executeCode(request);
+
+        if ("SUCCESS".equalsIgnoreCase(response.getStatus())) {
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
     }
 
 }

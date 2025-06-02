@@ -1,5 +1,6 @@
 package com.wcpk.db_schema_designer.service;
 
+import com.wcpk.db_schema_designer.dto.ProcedureRequest;
 import com.wcpk.db_schema_designer.dto.QueryRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,310 @@ public class PlSqlGenerateService {
         };
     }
 
+    public String generateProcedureCode(ProcedureRequest procedureRequest) {
+        StringBuilder procedure = new StringBuilder();
+
+        procedure.append("CREATE OR REPLACE PROCEDURE ").append(procedureRequest.getName());
+
+        if (procedureRequest.getParameters() != null && !procedureRequest.getParameters().isEmpty()) {
+            procedure.append(" (\n");
+            List<String> parameterDeclarations = procedureRequest.getParameters().stream()
+                    .map(this::buildParameterDeclaration)
+                    .collect(Collectors.toList());
+            procedure.append("    ").append(String.join(",\n    ", parameterDeclarations));
+            procedure.append("\n)");
+        }
+        else{
+            procedure.append(" ()");
+        }
+
+        procedure.append("\nLANGUAGE plpgsql");
+        procedure.append("\nAS $$\n");
+
+        if (procedureRequest.getVariables() != null && !procedureRequest.getVariables().isEmpty()) {
+            procedure.append("DECLARE\n");
+            for (ProcedureRequest.ProcedureVariable variable : procedureRequest.getVariables()) {
+                procedure.append("    ").append(buildVariableDeclaration(variable)).append("\n");
+            }
+            procedure.append("\n");
+        }
+
+        procedure.append("BEGIN\n");
+
+        if (procedureRequest.getSteps() != null && !procedureRequest.getSteps().isEmpty()) {
+            for (ProcedureRequest.ProcedureStep step : procedureRequest.getSteps()) {
+                procedure.append(buildProcedureStep(step, 1));
+            }
+        }
+
+        procedure.append("\nEXCEPTION\n");
+        procedure.append("    WHEN OTHERS THEN\n");
+        procedure.append("        RAISE;\n");
+        procedure.append("END").append(";\n");
+        procedure.append("$$;");
+
+        return procedure.toString();
+    }
+
+    private String buildParameterDeclaration(ProcedureRequest.ProcedureParameter parameter) {
+        StringBuilder paramDecl = new StringBuilder();
+        paramDecl.append(parameter.getName()).append(" ");
+
+        if (parameter.getDirection() != null && !parameter.getDirection().isEmpty()) {
+            paramDecl.append(parameter.getDirection().toUpperCase()).append(" ");
+        }
+
+        paramDecl.append(buildDataType(parameter.getType(), parameter.getSize(), parameter.getPrecision()));
+
+        return paramDecl.toString();
+    }
+
+    private String buildVariableDeclaration(ProcedureRequest.ProcedureVariable variable) {
+        StringBuilder varDecl = new StringBuilder();
+        varDecl.append(variable.getName()).append(" ");
+        varDecl.append(buildDataType(variable.getType(), variable.getSize(), variable.getPrecision()));
+
+        if (variable.getDefaultValue() != null && !variable.getDefaultValue().isEmpty()) {
+            if (shouldQuote(variable.getType())) {
+                varDecl.append(" := '").append(escapeSingleQuotes(variable.getDefaultValue())).append("'");
+            } else {
+                varDecl.append(" := ").append(variable.getDefaultValue());
+            }
+        }
+
+        varDecl.append(";");
+        return varDecl.toString();
+    }
+
+    private String buildDataType(String type, String size, String precision) {
+        StringBuilder dataType = new StringBuilder(type.toUpperCase());
+
+        if (size != null && !size.isEmpty()) {
+            dataType.append("(").append(size);
+            if (precision != null && !precision.isEmpty()) {
+                dataType.append(",").append(precision);
+            }
+            dataType.append(")");
+        }
+
+        return dataType.toString();
+    }
+
+    private String buildProcedureStep(ProcedureRequest.ProcedureStep step, int indentLevel) {
+        StringBuilder stepCode = new StringBuilder();
+        String indent = "    ".repeat(indentLevel);
+
+        if (step.getType() == null) {
+            return stepCode.toString();
+        }
+
+        switch (step.getType().toUpperCase()) {
+            case "QUERY" -> stepCode.append(buildQueryStep(step, indent));
+            case "SELECT INTO" -> stepCode.append(buildSelectIntoStep(step, indent));
+            case "IF-ELSE" -> stepCode.append(buildIfElseStep(step, indentLevel));
+            case "LOOP" -> stepCode.append(buildLoopStep(step, indentLevel));
+            case "EXCEPTION" -> stepCode.append(buildExceptionStep(step, indent));
+            case "CUSTOM" -> stepCode.append(buildCustomStep(step, indent));
+            default -> stepCode.append(indent).append("-- Unknown step type: ").append(step.getType()).append("\n");
+        }
+
+        return stepCode.toString();
+    }
+    private String buildQueryStep(ProcedureRequest.ProcedureStep step, String indent) {
+        StringBuilder queryStep = new StringBuilder();
+
+        QueryRequest queryRequest = new QueryRequest();
+        queryRequest.setType(step.getQueryType());
+        queryRequest.setTable(step.getTableName());
+        queryRequest.setColumns(step.getColumns());
+        queryRequest.setWhere(step.getWhereCondition());
+        queryRequest.setOrderBy(step.getOrderBy());
+        queryRequest.setGroupBy(step.getGroupBy());
+        queryRequest.setValues(step.getValues());
+
+        if (step.getLimit() != null && !step.getLimit().isEmpty()) {
+            try {
+                queryRequest.setLimit(Integer.parseInt(step.getLimit()));
+            } catch (NumberFormatException e) {
+            }
+        }
+
+        String query = generateQueryCode(queryRequest);
+        String[] queryLines = query.split("\n");
+
+        for (String line : queryLines) {
+            queryStep.append(indent).append(line).append("\n");
+        }
+
+        if (!query.trim().endsWith(";")) {
+            queryStep.append(indent).append(";\n");
+        }
+
+        return queryStep.toString();
+    }
+
+    private String buildSelectIntoStep(ProcedureRequest.ProcedureStep step, String indent) {
+        StringBuilder selectInto = new StringBuilder();
+
+        selectInto.append(indent).append("SELECT ");
+
+        if (step.getColumns() == null || step.getColumns().isEmpty()) {
+            selectInto.append("*");
+        } else {
+            selectInto.append(String.join(", ", step.getColumns()));
+        }
+
+        selectInto.append("\n").append(indent).append("INTO ").append(step.getIntoTarget());
+        selectInto.append("\n").append(indent).append("FROM ").append(step.getTableName());
+
+        if (step.getWhereCondition() != null && !step.getWhereCondition().isEmpty()) {
+            selectInto.append("\n").append(indent).append("WHERE ");
+            selectInto.append(buildWhereClause(step.getWhereCondition()));
+        }
+
+        if (step.getOrderBy() != null && !step.getOrderBy().isEmpty()) {
+            selectInto.append("\n").append(indent).append("ORDER BY ");
+            selectInto.append(step.getOrderBy().stream()
+                    .map(o -> o.getColumn() + " " + o.getDirection())
+                    .collect(Collectors.joining(", ")));
+        }
+
+        selectInto.append(";\n");
+
+        return selectInto.toString();
+    }
+    private String buildWhereClause(List<QueryRequest.WhereCondition> whereConditions) {
+        StringBuilder whereClause = new StringBuilder();
+
+        for (int i = 0; i < whereConditions.size(); i++) {
+            QueryRequest.WhereCondition cond = whereConditions.get(i);
+
+            if (i > 0) {
+                whereClause.append(" ").append(cond.getLogicalOperator()).append(" ");
+            }
+
+            whereClause.append(cond.getColumn()).append(" ").append(cond.getOperator());
+
+            if ("IS NULL".equalsIgnoreCase(cond.getOperator()) || "IS NOT NULL".equalsIgnoreCase(cond.getOperator())) {
+            } else if ("BETWEEN".equalsIgnoreCase(cond.getOperator())) {
+                if (shouldQuote(cond.getColumnType())) {
+                    whereClause.append(" '").append(escapeSingleQuotes(cond.getValue()))
+                            .append("' AND '").append(escapeSingleQuotes(cond.getValue2())).append("'");
+                } else {
+                    whereClause.append(" ").append(cond.getValue()).append(" AND ").append(cond.getValue2());
+                }
+            } else if ("IN".equalsIgnoreCase(cond.getOperator())) {
+                if (shouldQuote(cond.getColumnType())) {
+                    String quotedValues = Arrays.stream(cond.getValue().split(","))
+                            .map(String::trim)
+                            .map(v -> "'" + escapeSingleQuotes(v) + "'")
+                            .collect(Collectors.joining(", "));
+                    whereClause.append(" (").append(quotedValues).append(")");
+                } else {
+                    whereClause.append(" (").append(cond.getValue()).append(")");
+                }
+            } else {
+                if (shouldQuote(cond.getColumnType())) {
+                    whereClause.append(" '").append(escapeSingleQuotes(cond.getValue())).append("'");
+                } else {
+                    whereClause.append(" ").append(cond.getValue());
+                }
+            }
+        }
+
+        return whereClause.toString();
+    }
+
+    private String buildIfElseStep(ProcedureRequest.ProcedureStep step, int indentLevel) {
+        StringBuilder ifElse = new StringBuilder();
+        String indent = "    ".repeat(indentLevel);
+
+        ifElse.append(indent).append("IF ").append(step.getCondition()).append(" THEN\n");
+
+        if (step.getNestedSteps() != null && !step.getNestedSteps().isEmpty()) {
+            for (ProcedureRequest.ProcedureStep nestedStep : step.getNestedSteps()) {
+                ifElse.append(buildProcedureStep(nestedStep, indentLevel + 1));
+            }
+        }
+
+        ifElse.append(indent).append("END IF;\n");
+
+        return ifElse.toString();
+    }
+
+    private String buildLoopStep(ProcedureRequest.ProcedureStep step, int indentLevel) {
+        StringBuilder loop = new StringBuilder();
+        String indent = "    ".repeat(indentLevel);
+
+        if ("FOR".equalsIgnoreCase(step.getLoopType())) {
+            loop.append(indent).append("FOR ").append(step.getLoopCondition()).append(" LOOP\n");
+        } else if ("WHILE".equalsIgnoreCase(step.getLoopType())) {
+            loop.append(indent).append("WHILE ").append(step.getLoopCondition()).append(" LOOP\n");
+        } else {
+            loop.append(indent).append("LOOP\n");
+        }
+
+        if (step.getNestedSteps() != null && !step.getNestedSteps().isEmpty()) {
+            for (ProcedureRequest.ProcedureStep nestedStep : step.getNestedSteps()) {
+                loop.append(buildProcedureStep(nestedStep, indentLevel + 1));
+            }
+        }
+
+        if ("WHILE".equalsIgnoreCase(step.getLoopType()) || step.getLoopType() == null) {
+            loop.append(indent).append("    EXIT WHEN ").append(step.getLoopCondition()).append(";\n");
+        }
+
+        loop.append(indent).append("END LOOP;\n");
+
+        return loop.toString();
+    }
+    private String buildExceptionStep(ProcedureRequest.ProcedureStep step, String indent) {
+        StringBuilder exception = new StringBuilder();
+        exception.append("\nEXCEPTION\n");
+
+        String exceptionType = step.getExceptionType();
+        String handling = step.getExceptionHandling();
+        String customExceptionName = step.getCustomExceptionName();
+
+        if (exceptionType != null && !exceptionType.trim().isEmpty()) {
+
+            if ("CUSTOM_WHEN".equalsIgnoreCase(exceptionType.trim())) {
+                if (customExceptionName != null && !customExceptionName.trim().isEmpty()) {
+                    exception.append(indent).append("WHEN ");
+                    exception.append(customExceptionName.trim());
+                    exception.append(" THEN\n");
+                }
+            } else {
+                exception.append(indent)
+                        .append("WHEN ")
+                        .append(exceptionType.toUpperCase())
+                        .append(" THEN\n");
+            }
+
+            if (handling != null && !handling.trim().isEmpty()) {
+                String[] handlingLines = handling.split("\n");
+                for (String line : handlingLines) {
+                    exception.append(indent).append("    ").append(line.trim()).append("\n");
+                }
+            } else {
+                exception.append(indent).append("    RAISE;\n");
+            }
+        }
+        return exception.toString();
+    }
+
+    private String buildCustomStep(ProcedureRequest.ProcedureStep step, String indent) {
+        StringBuilder custom = new StringBuilder();
+
+        if (step.getCustomCode() != null && !step.getCustomCode().isEmpty()) {
+            String[] customLines = step.getCustomCode().split("\n");
+            for (String line : customLines) {
+                custom.append(indent).append(line).append("\n");
+            }
+        }
+
+        return custom.toString();
+    }
     public String buildSelectQuery(QueryRequest queryRequest) {
         StringBuilder query = new StringBuilder();
 
