@@ -1,6 +1,6 @@
 package com.wcpk.db_schema_designer.service;
 
-import com.wcpk.db_schema_designer.dto.ProcedureRequest;
+import com.wcpk.db_schema_designer.dto.PLSQLRequest;
 import com.wcpk.db_schema_designer.dto.QueryRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,7 +24,7 @@ public class PlSqlGenerateService {
         };
     }
 
-    public String generateProcedureCode(ProcedureRequest procedureRequest) {
+    public String generateProcedureCode(PLSQLRequest procedureRequest) {
         StringBuilder procedure = new StringBuilder();
 
         procedure.append("CREATE OR REPLACE PROCEDURE ").append(procedureRequest.getName());
@@ -46,7 +46,7 @@ public class PlSqlGenerateService {
 
         if (procedureRequest.getVariables() != null && !procedureRequest.getVariables().isEmpty()) {
             procedure.append("DECLARE\n");
-            for (ProcedureRequest.ProcedureVariable variable : procedureRequest.getVariables()) {
+            for (PLSQLRequest.Variable variable : procedureRequest.getVariables()) {
                 procedure.append("    ").append(buildVariableDeclaration(variable)).append("\n");
             }
             procedure.append("\n");
@@ -55,7 +55,7 @@ public class PlSqlGenerateService {
         procedure.append("BEGIN\n");
 
         if (procedureRequest.getSteps() != null && !procedureRequest.getSteps().isEmpty()) {
-            for (ProcedureRequest.ProcedureStep step : procedureRequest.getSteps()) {
+            for (PLSQLRequest.Step step : procedureRequest.getSteps()) {
                 procedure.append(buildProcedureStep(step, 1));
             }
         }
@@ -69,7 +69,7 @@ public class PlSqlGenerateService {
         return procedure.toString();
     }
 
-    private String buildParameterDeclaration(ProcedureRequest.ProcedureParameter parameter) {
+    private String buildParameterDeclaration(PLSQLRequest.Parameter parameter) {
         StringBuilder paramDecl = new StringBuilder();
         paramDecl.append(parameter.getName()).append(" ");
 
@@ -82,7 +82,7 @@ public class PlSqlGenerateService {
         return paramDecl.toString();
     }
 
-    private String buildVariableDeclaration(ProcedureRequest.ProcedureVariable variable) {
+    private String buildVariableDeclaration(PLSQLRequest.Variable variable) {
         StringBuilder varDecl = new StringBuilder();
         varDecl.append(variable.getName()).append(" ");
         varDecl.append(buildDataType(variable.getType(), variable.getSize(), variable.getPrecision()));
@@ -113,7 +113,7 @@ public class PlSqlGenerateService {
         return dataType.toString();
     }
 
-    private String buildProcedureStep(ProcedureRequest.ProcedureStep step, int indentLevel) {
+    private String buildProcedureStep(PLSQLRequest.Step step, int indentLevel) {
         StringBuilder stepCode = new StringBuilder();
         String indent = "    ".repeat(indentLevel);
 
@@ -133,7 +133,7 @@ public class PlSqlGenerateService {
 
         return stepCode.toString();
     }
-    private String buildQueryStep(ProcedureRequest.ProcedureStep step, String indent) {
+    private String buildQueryStep(PLSQLRequest.Step step, String indent) {
         StringBuilder queryStep = new StringBuilder();
 
         QueryRequest queryRequest = new QueryRequest();
@@ -166,7 +166,7 @@ public class PlSqlGenerateService {
         return queryStep.toString();
     }
 
-    private String buildSelectIntoStep(ProcedureRequest.ProcedureStep step, String indent) {
+    private String buildSelectIntoStep(PLSQLRequest.Step step, String indent) {
         StringBuilder selectInto = new StringBuilder();
 
         selectInto.append(indent).append("SELECT ");
@@ -238,14 +238,14 @@ public class PlSqlGenerateService {
         return whereClause.toString();
     }
 
-    private String buildIfElseStep(ProcedureRequest.ProcedureStep step, int indentLevel) {
+    private String buildIfElseStep(PLSQLRequest.Step step, int indentLevel) {
         StringBuilder ifElse = new StringBuilder();
         String indent = "    ".repeat(indentLevel);
 
         ifElse.append(indent).append("IF ").append(step.getCondition()).append(" THEN\n");
 
         if (step.getNestedSteps() != null && !step.getNestedSteps().isEmpty()) {
-            for (ProcedureRequest.ProcedureStep nestedStep : step.getNestedSteps()) {
+            for (PLSQLRequest.Step nestedStep : step.getNestedSteps()) {
                 ifElse.append(buildProcedureStep(nestedStep, indentLevel + 1));
             }
         }
@@ -255,7 +255,7 @@ public class PlSqlGenerateService {
         return ifElse.toString();
     }
 
-    private String buildLoopStep(ProcedureRequest.ProcedureStep step, int indentLevel) {
+    private String buildLoopStep(PLSQLRequest.Step step, int indentLevel) {
         StringBuilder loop = new StringBuilder();
         String indent = "    ".repeat(indentLevel);
 
@@ -268,7 +268,7 @@ public class PlSqlGenerateService {
         }
 
         if (step.getNestedSteps() != null && !step.getNestedSteps().isEmpty()) {
-            for (ProcedureRequest.ProcedureStep nestedStep : step.getNestedSteps()) {
+            for (PLSQLRequest.Step nestedStep : step.getNestedSteps()) {
                 loop.append(buildProcedureStep(nestedStep, indentLevel + 1));
             }
         }
@@ -281,7 +281,7 @@ public class PlSqlGenerateService {
 
         return loop.toString();
     }
-    private String buildExceptionStep(ProcedureRequest.ProcedureStep step, String indent) {
+    private String buildExceptionStep(PLSQLRequest.Step step, String indent) {
         StringBuilder exception = new StringBuilder();
         exception.append("\nEXCEPTION\n");
 
@@ -316,7 +316,7 @@ public class PlSqlGenerateService {
         return exception.toString();
     }
 
-    private String buildCustomStep(ProcedureRequest.ProcedureStep step, String indent) {
+    private String buildCustomStep(PLSQLRequest.Step step, String indent) {
         StringBuilder custom = new StringBuilder();
 
         if (step.getCustomCode() != null && !step.getCustomCode().isEmpty()) {
@@ -538,6 +538,73 @@ public class PlSqlGenerateService {
         }
 
         return query.toString();
+    }
+
+    public String generateFunctionCode(PLSQLRequest functionRequest) {
+        StringBuilder function = new StringBuilder();
+
+        function.append("CREATE OR REPLACE FUNCTION ").append(functionRequest.getName());
+
+        if (functionRequest.getParameters() != null && !functionRequest.getParameters().isEmpty()) {
+            function.append(" (\n");
+            List<String> parameterDeclarations = functionRequest.getParameters().stream()
+                    .map(this::buildFunctionParameterDeclaration)
+                    .collect(Collectors.toList());
+            function.append("    ").append(String.join(",\n    ", parameterDeclarations));
+            function.append("\n)");
+        } else {
+            function.append("()");
+        }
+        if (functionRequest.getReturnType() != null) {
+            function.append("\nRETURNS ");
+            function.append(buildDataType(
+                    functionRequest.getReturnType().getType(),
+                    functionRequest.getReturnType().getSize(),
+                    functionRequest.getReturnType().getPrecision()
+            ));
+        } else {
+            function.append("\nRETURNS VOID");
+        }
+
+        function.append("\nLANGUAGE plpgsql");
+        function.append("\nAS $$\n");
+
+        if (functionRequest.getVariables() != null && !functionRequest.getVariables().isEmpty()) {
+            function.append("DECLARE\n");
+            for (PLSQLRequest.Variable variable : functionRequest.getVariables()) {
+                function.append("    ").append(buildVariableDeclaration(variable)).append("\n");
+            }
+            function.append("\n");
+        }
+
+        function.append("BEGIN\n");
+
+        if (functionRequest.getSteps() != null && !functionRequest.getSteps().isEmpty()) {
+            for (PLSQLRequest.Step step : functionRequest.getSteps()) {
+                function.append(buildProcedureStep(step, 1));
+            }
+        }
+
+        function.append("END;\n");
+        function.append("$$;");
+
+        return function.toString();
+    }
+
+    private String buildFunctionParameterDeclaration(PLSQLRequest.Parameter parameter) {
+        StringBuilder paramDecl = new StringBuilder();
+        paramDecl.append(parameter.getName()).append(" ");
+
+        if (parameter.getDirection() != null && !parameter.getDirection().isEmpty()) {
+            String direction = parameter.getDirection().toUpperCase();
+            if ("IN".equals(direction) || "INOUT".equals(direction)) {
+                paramDecl.append(direction).append(" ");
+            }
+        }
+
+        paramDecl.append(buildDataType(parameter.getType(), parameter.getSize(), parameter.getPrecision()));
+
+        return paramDecl.toString();
     }
 
     private boolean shouldQuote(String columnType) {

@@ -7,15 +7,16 @@ import java.util.List;
 
 @Getter
 @Setter
-public class ProcedureRequest {
+public class PLSQLRequest {
     private String name;
-    private List<ProcedureParameter> parameters;
-    private List<ProcedureVariable> variables;
-    private List<ProcedureStep> steps;
+    private List<Parameter> parameters;
+    private List<Variable> variables;
+    private List<Step> steps;
+    private ReturnType returnType;
 
     @Setter
     @Getter
-    public static class ProcedureParameter {
+    public static class Parameter {
         private String name;
         private String direction;
         private String type;
@@ -24,17 +25,25 @@ public class ProcedureRequest {
     }
     @Setter
     @Getter
-    public static class ProcedureVariable {
+    public static class Variable {
         private String name;
         private String type;
         private String size;
         private String precision;
         private String defaultValue;
     }
+    @Setter
+    @Getter
+    public static class ReturnType {
+        private String type;
+        private String size;
+        private String precision;
+    }
+
 
     @Getter
     @Setter
-    public static class ProcedureStep {
+    public static class Step {
         private String stepNumber;
         private String type;
 
@@ -59,6 +68,6 @@ public class ProcedureRequest {
         private String customCode;
         private String intoTarget;
 
-        private List<ProcedureStep> nestedSteps;
+        private List<Step> nestedSteps;
     }
 }

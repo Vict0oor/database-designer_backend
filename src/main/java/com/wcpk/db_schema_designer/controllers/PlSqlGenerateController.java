@@ -1,7 +1,7 @@
 package com.wcpk.db_schema_designer.controllers;
 
 import com.wcpk.db_schema_designer.dto.DatabaseConnectionRequest;
-import com.wcpk.db_schema_designer.dto.ProcedureRequest;
+import com.wcpk.db_schema_designer.dto.PLSQLRequest;
 import com.wcpk.db_schema_designer.dto.QueryRequest;
 import com.wcpk.db_schema_designer.service.PlSqlGenerateService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,9 +25,15 @@ public class PlSqlGenerateController {
     }
 
     @PostMapping("/generate/procedure")
-    public ResponseEntity<String> generateProcedure(@RequestBody ProcedureRequest procedureRequest)
+    public ResponseEntity<String> generateProcedure(@RequestBody PLSQLRequest procedureRequest)
     {
         return ResponseEntity.ok(plSqlGenerateService.generateProcedureCode(procedureRequest));
     }
+    @PostMapping("/generate/function")
+    public ResponseEntity<String> generateFunction(@RequestBody PLSQLRequest functionRequest)
+    {
+        return ResponseEntity.ok(plSqlGenerateService.generateFunctionCode(functionRequest));
+    }
+
 
 }
