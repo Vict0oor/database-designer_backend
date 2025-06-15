@@ -1,8 +1,8 @@
 package com.wcpk.db_schema_designer.controllers;
 
-import com.wcpk.db_schema_designer.dto.DatabaseConnectionRequest;
 import com.wcpk.db_schema_designer.dto.PLSQLRequest;
 import com.wcpk.db_schema_designer.dto.QueryRequest;
+import com.wcpk.db_schema_designer.dto.RoutineExecutionRequest;
 import com.wcpk.db_schema_designer.service.PlSqlGenerateService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +34,12 @@ public class PlSqlGenerateController {
     {
         return ResponseEntity.ok(plSqlGenerateService.generateFunctionCode(functionRequest));
     }
+    @PostMapping("/generate/exe-code")
+    public ResponseEntity<String> generateRoutineExecutionCode(@RequestBody RoutineExecutionRequest request)
+    {
+        return ResponseEntity.ok(plSqlGenerateService.generateRoutineExecutionCode(request));
+    }
+
 
 
 }

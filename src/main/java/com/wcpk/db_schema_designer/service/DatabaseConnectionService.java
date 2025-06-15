@@ -1,9 +1,6 @@
 package com.wcpk.db_schema_designer.service;
 
-import com.wcpk.db_schema_designer.dto.DatabaseConnectionRequest;
-import com.wcpk.db_schema_designer.dto.DatabaseUploadRequest;
-import com.wcpk.db_schema_designer.dto.ExecuteCodeRequest;
-import com.wcpk.db_schema_designer.dto.ExecuteCodeResponse;
+import com.wcpk.db_schema_designer.dto.*;
 import com.wcpk.db_schema_designer.model.Column;
 import com.wcpk.db_schema_designer.model.Table;
 import lombok.RequiredArgsConstructor;
@@ -14,10 +11,7 @@ import org.springframework.dao.DataAccessException;
 
 import javax.sql.DataSource;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -77,6 +71,73 @@ public class DatabaseConnectionService {
             throw new RuntimeException(e);
         }
     }
+
+    public List<RoutineInfo> getAllRoutinesWithParams(DatabaseConnectionRequest dcr) {
+        String url = "jdbc:postgresql://" + dcr.getHost() + ":" + dcr.getPort() + "/" + dcr.getDatabaseName();
+        List<RoutineInfo> routines = new ArrayList<>();
+
+        String routinesSql = "SELECT routine_name, routine_type, data_type, specific_name " +
+                "FROM information_schema.routines " +
+                "WHERE specific_schema = ?";
+
+        String paramsSql = "SELECT specific_name, parameter_name, data_type, parameter_mode, ordinal_position " +
+                "FROM information_schema.parameters " +
+                "WHERE specific_schema = ?";
+
+        try (Connection conn = DriverManager.getConnection(url, dcr.getUsername(), dcr.getPassword());
+             PreparedStatement routineStmt = conn.prepareStatement(routinesSql);
+             PreparedStatement paramsStmt = conn.prepareStatement(paramsSql)) {
+
+            routineStmt.setString(1, "public");
+            paramsStmt.setString(1, "public");
+
+            Map<String, List<ParameterInfo>> paramMap = new HashMap<>();
+
+            try (ResultSet prs = paramsStmt.executeQuery()) {
+                while (prs.next()) {
+                    String specificName = prs.getString("specific_name");
+                    String paramName = prs.getString("parameter_name");
+                    String dataType = prs.getString("data_type");
+                    String mode = prs.getString("parameter_mode");
+                    int position = prs.getInt("ordinal_position");
+
+                    if (paramName == null) continue;
+
+                    ParameterInfo param = new ParameterInfo();
+                    param.setName(paramName);
+                    param.setDataType(dataType);
+                    param.setMode(mode);
+                    param.setPosition(position);
+
+                    paramMap.computeIfAbsent(specificName, k -> new ArrayList<>()).add(param);
+                }
+            }
+
+            try (ResultSet rs = routineStmt.executeQuery()) {
+                while (rs.next()) {
+                    String routineName = rs.getString("routine_name");
+                    String routineType = rs.getString("routine_type");
+                    String returnType = rs.getString("data_type");
+                    String specificName = rs.getString("specific_name");
+
+                    RoutineInfo info = new RoutineInfo();
+                    info.setName(routineName);
+                    info.setType(routineType);
+                    info.setReturnType("FUNCTION".equalsIgnoreCase(routineType) ? returnType : null);
+                    info.setParameters(paramMap.getOrDefault(specificName, new ArrayList<>()));
+
+                    routines.add(info);
+                }
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Error retrieving routines: " + e.getMessage(), e);
+        }
+
+        return routines;
+    }
+
+
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest request) {
         DatabaseConnectionRequest connReq = request.getDatabaseConnectionRequest();
         String sqlCode = request.getSqlCode();

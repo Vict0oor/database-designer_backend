@@ -2,6 +2,7 @@ package com.wcpk.db_schema_designer.service;
 
 import com.wcpk.db_schema_designer.dto.PLSQLRequest;
 import com.wcpk.db_schema_designer.dto.QueryRequest;
+import com.wcpk.db_schema_designer.dto.RoutineExecutionRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -128,6 +129,7 @@ public class PlSqlGenerateService {
             case "LOOP" -> stepCode.append(buildLoopStep(step, indentLevel));
             case "EXCEPTION" -> stepCode.append(buildExceptionStep(step, indent));
             case "CUSTOM" -> stepCode.append(buildCustomStep(step, indent));
+            case "RETURN" -> stepCode.append(buildReturnStep(step, indent));
             default -> stepCode.append(indent).append("-- Unknown step type: ").append(step.getType()).append("\n");
         }
 
@@ -328,6 +330,15 @@ public class PlSqlGenerateService {
 
         return custom.toString();
     }
+
+    private String buildReturnStep(PLSQLRequest.Step step, String indent) {
+        StringBuilder returnString = new StringBuilder();
+        returnString.append("RETURN ");
+        returnString.append(step.getReturnValue());
+        returnString.append(";\n");
+        return returnString.toString();
+    }
+
     public String buildSelectQuery(QueryRequest queryRequest) {
         StringBuilder query = new StringBuilder();
 
@@ -605,6 +616,97 @@ public class PlSqlGenerateService {
         paramDecl.append(buildDataType(parameter.getType(), parameter.getSize(), parameter.getPrecision()));
 
         return paramDecl.toString();
+    }
+    public String generateRoutineExecutionCode(RoutineExecutionRequest routineRequest) {
+        if (routineRequest.getRoutineName() == null || routineRequest.getRoutineName().isEmpty()) {
+            throw new IllegalArgumentException("Routine name is required");
+        }
+
+        StringBuilder execution = new StringBuilder();
+
+        if ("FUNCTION".equalsIgnoreCase(routineRequest.getRoutineType())) {
+            execution.append(buildFunctionExecution(routineRequest));
+        } else if ("PROCEDURE".equalsIgnoreCase(routineRequest.getRoutineType())) {
+            execution.append(buildProcedureExecution(routineRequest));
+        } else {
+            throw new IllegalArgumentException("Unsupported routine type: " + routineRequest.getRoutineType());
+        }
+
+        return execution.toString();
+    }
+
+    private String buildFunctionExecution(RoutineExecutionRequest routineRequest) {
+        StringBuilder execution = new StringBuilder();
+
+        if (routineRequest.getResultVariable() != null && !routineRequest.getResultVariable().isEmpty()) {
+            execution.append("SELECT ").append(routineRequest.getRoutineName()).append("(");
+        } else {
+            execution.append("SELECT ").append(routineRequest.getRoutineName()).append("(");
+        }
+
+        if (routineRequest.getParameters() != null && !routineRequest.getParameters().isEmpty()) {
+            List<String> parameterValues = routineRequest.getParameters().stream()
+                    .sorted((a, b) -> Integer.compare(a.getPosition(), b.getPosition()))
+                    .map(this::buildParameterValue)
+                    .collect(Collectors.toList());
+
+            execution.append(String.join(", ", parameterValues));
+        }
+
+        execution.append(")");
+
+        if (routineRequest.getResultVariable() != null && !routineRequest.getResultVariable().isEmpty()) {
+            execution.append(" INTO ").append(routineRequest.getResultVariable());
+        }
+
+        execution.append(";");
+
+        return execution.toString();
+    }
+
+    private String buildProcedureExecution(RoutineExecutionRequest routineRequest) {
+        StringBuilder execution = new StringBuilder();
+
+        execution.append("CALL ").append(routineRequest.getRoutineName()).append("(");
+
+        if (routineRequest.getParameters() != null && !routineRequest.getParameters().isEmpty()) {
+            List<String> parameterValues = routineRequest.getParameters().stream()
+                    .sorted((a, b) -> Integer.compare(a.getPosition(), b.getPosition()))
+                    .map(this::buildParameterValue)
+                    .collect(Collectors.toList());
+
+            execution.append(String.join(", ", parameterValues));
+        }
+
+        execution.append(");");
+
+        return execution.toString();
+    }
+
+    private String buildParameterValue(RoutineExecutionRequest.Parameter parameter) {
+        if (parameter.getValue() == null || parameter.getValue().isEmpty()) {
+            return "NULL";
+        }
+
+        return switch (parameter.getValueType().toUpperCase()) {
+            case "LITERAL" -> formatLiteralValue(parameter.getValue(), parameter.getDataType());
+            case "VARIABLE" -> parameter.getValue();
+            case "PARAMETER" -> parameter.getValue();
+            case "QUERY_RESULT" -> "(" + parameter.getValue() + ")";
+            default -> throw new IllegalArgumentException("Unsupported value type: " + parameter.getValueType());
+        };
+    }
+
+    private String formatLiteralValue(String value, String dataType) {
+        if (value == null || "NULL".equalsIgnoreCase(value)) {
+            return "NULL";
+        }
+
+        if (shouldQuote(dataType)) {
+            return "'" + escapeSingleQuotes(value) + "'";
+        } else {
+            return value;
+        }
     }
 
     private boolean shouldQuote(String columnType) {

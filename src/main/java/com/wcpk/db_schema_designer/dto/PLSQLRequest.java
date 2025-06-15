@@ -67,6 +67,8 @@ public class PLSQLRequest {
         private String customExceptionName;
         private String customCode;
         private String intoTarget;
+        private String returnValue;
+
 
         private List<Step> nestedSteps;
     }
